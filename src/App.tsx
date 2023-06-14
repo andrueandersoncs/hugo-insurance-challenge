@@ -1,50 +1,9 @@
-import { TextInput, Button, Group, Container, Paper, Title, Flex } from '@mantine/core';
+import { TextInput, Button, Group, Container, Paper, Title, Flex, Notification } from '@mantine/core';
 import { DatePickerInput, YearPickerInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
-
-/*
-Frontend
-Create a React frontend that can display the current application state, and can allow information
-to be added or edited. The frontend should do basic validation, and when everything is filled out,
-allow the application to be submitted, and display either an error message if the application is
-not complete or the quoted price to purchase insurance.
-
-Specifications
-The data that an insurance application needs consists of the following:
-● First and Last name
-● Date of Birth (validate that input is a date and at least 16 years old)
-● Address
-○ Street
-○ City
-○ State
-○ ZipCode (validate numeric, but don’t worry about validating if zip code exists)
-● Vehicle(s) (must have 1 vehicle, cannot have more than 3 total)
-○ VIN
-○ Year (validate numeric and valid year between 1985 and current year + 1)
-○ Make and Model
-*/
-
-type Application = {
-  firstName: string;
-  lastName: string;
-  dateOfBirth: Date;
-  address: Address;
-  vehicles: Vehicle[];
-}
-
-type Address = {
-  street: string;
-  city: string;
-  state: string;
-  zipCode: string;
-};
-
-type Vehicle = {
-  vin: string;
-  year: Date;
-  make: string;
-  model: string;
-}
+import { getApplication, validateApplication } from './Api';
+import { useEffect, useState } from 'react';
+import { Application } from './types';
 
 const App = () => {
   const form = useForm<Application>({
@@ -92,6 +51,32 @@ const App = () => {
     },
   });
 
+  const [quote, setQuote] = useState<number | null>(null);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const params = new URLSearchParams(url.search);
+    const id = params.get('resume')!;
+    
+    if (!id) return;
+
+    getApplication({ id }).then((values) => {
+      if (values.data.dateOfBirth) {
+        values.data.dateOfBirth = new Date(values.data.dateOfBirth);
+      }
+
+      if (values.data.vehicles) {
+        values.data.vehicles = values.data.vehicles.map((vehicle) => ({
+          ...vehicle,
+          year: new Date(vehicle.year),
+        }));
+      }
+      
+      form.setValues(values.data);
+      form.resetDirty(values.data);
+    });
+  }, [])
+
   const vehicles = form.getTransformedValues().vehicles;
 
   const onClickAddVehicle = () => {
@@ -108,7 +93,13 @@ const App = () => {
   }
 
   const onSubmitForm = (values: Application) => {
-    console.log('Submitted:', values)
+    const url = new URL(window.location.href);
+    const params = new URLSearchParams(url.search);
+    const id = params.get('resume')!;
+    
+    if (!id) return;
+
+    validateApplication({id, data: values}).then(resp => setQuote(resp.data.quote));
   }
 
   return (
@@ -189,6 +180,11 @@ const App = () => {
               </Flex>
             </Paper>
           ))}
+          {quote && (
+            <Notification title="Application Success" color="green" mt="xs">
+              Congratulations! Your application has been accepted. Your quote is ${quote}.
+            </Notification>
+          )}
           <Group position="right" mt="md">
             <Button type="submit">Submit</Button>
           </Group>

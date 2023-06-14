@@ -1,29 +1,66 @@
 import {onCall} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import { initializeApp } from "firebase/app";
+import { getDatabase, ref, push, get, set, child } from "firebase/database";
 
-/*
-Create a web API that exposes four endpoints:
-1. POST route that starts a new insurance application and initializes it with the provided data
-a. This route should return a “resume” route that points to the frontend URL to load the created application
-2. GET route that can retrieve the current insurance application
-3. PUT route that will update the insurance application with provided data
-4. POST route that validates the application and returns a price
-a. You do not actually need to do any calculation here, returning a random number value would be sufficient
-*/
+const firebaseConfig = {
+  apiKey: "AIzaSyA-xAUnQkMJVv11vstn-G-69nNEVmjROSc",
+  authDomain: "hugo-insurance-challenge.firebaseapp.com",
+  projectId: "hugo-insurance-challenge",
+  storageBucket: "hugo-insurance-challenge.appspot.com",
+  messagingSenderId: "413634730809",
+  appId: "1:413634730809:web:bee497ddc9bd6b7c4366e8",
+  databaseURL: "https://hugo-insurance-challenge-default-rtdb.firebaseio.com/"
+};
 
-export const createApplication = onCall((request) => {
-  logger.info("Hello logs!", {structuredData: true});
-  return {message: "Hello from Firebase! or something"};
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
+
+// connectDatabaseEmulator(database, "127.0.0.1", 9000);
+
+export const createApplication = onCall(async (request) => {
+  try {
+    const newApplication = await push(ref(database, 'applications'), request.data);
+    logger.info("Created new application: " + JSON.stringify(request.data), {structuredData: true});
+    return { url: 'https://hugo-insurance-challenge.web.app/?resume=' + newApplication.key };
+  } catch (error) {
+    logger.error("Error creating application: " + JSON.stringify(error), {structuredData: true});
+    return {message: "Error creating application"};
+  }
 });
 
-export const getApplication = onCall((request) => {
-  logger.info("Hello logs!", {structuredData: true});
-  return {message: "Hello from Firebase! or something"};
+export const getApplication = onCall(async (request) => {
+  if (!request.data.id) {
+    logger.info("Application requested with no ID provided", {structuredData: true});
+    return {message: "No application id provided"};
+  }
+  
+  try {
+    const snapshot = await get(child(ref(database, 'applications'), request.data.id))
+    if (!snapshot.exists()) return {message: "No application found with that id"};
+    return snapshot.val();
+  } catch (error) {
+    logger.error("Error retrieving application: " + error, {structuredData: true});
+    return {message: "Error retrieving application"};
+  }
 });
 
-export const updateApplication = onCall((request) => {
-  logger.info("Hello logs!", {structuredData: true});
-  return {message: "Hello from Firebase! or something"};
+export const updateApplication = onCall(async (request) => {
+  if (!request.data.id) {
+    logger.info("Application requested with no ID provided", {structuredData: true});
+    return {message: "No application id provided"};
+  }
+  
+  try {
+    const snapshot = await get(child(ref(database, 'applications'), request.data.id))
+    if (!snapshot.exists()) return {message: "No application found with that id"};
+    set(snapshot.ref, request.data);
+    logger.info("Updated application: " + request.data, {structuredData: true});
+    return {message: "Application updated"};
+  } catch (error) {
+    logger.error("Error updating application: " + error, {structuredData: true});
+    return {message: "Error updating application"};
+  }
 });
 
 const validators = {
@@ -49,9 +86,34 @@ const validators = {
       && vehicle.model.trim().length > 0
       && new Date(vehicle.year).getFullYear() >= 1985
       && new Date(vehicle.year).getFullYear() <= new Date().getFullYear() + 1),
-}
+} as const;
 
-export const validateApplication = onCall((request) => {
-  logger.info("Hello logs!", {structuredData: true});
-  return {message: "Hello from Firebase! or something"};
+export const validateApplication = onCall(async (request) => {
+  if (!request.data.id) {
+    logger.info("Application requested with no ID provided", {structuredData: true});
+    return {message: "No application id provided"};
+  }
+
+  const errors = Object.entries(request.data.data).reduce((errors, [key, value]) => {
+    if (!(key in validators)) return errors;
+    if (!validators[key as keyof typeof validators](value as any)) errors.push(key);
+    return errors;
+  }, [] as string[]);
+  
+  if (errors.length > 0) {
+    logger.info("Application failed validation: " + errors.join(", "), {structuredData: true});
+    return {message: "Application failed validation", errors};
+  }
+  
+  try {
+    const snapshot = await get(child(ref(database, 'applications'), request.data.id))
+    if (!snapshot.exists()) return {message: "No application found with that id"};
+    set(snapshot.ref, request.data.data);
+    logger.info("Updated application: " + request.data.data, {structuredData: true});
+    logger.info("Application passed validation", {structuredData: true});
+    return {quote: Math.floor(Math.random() * 1000)};
+  } catch (error) {
+    logger.error("Error updating application: " + error, {structuredData: true});
+    return {message: "Error updating application"};
+  }
 });
